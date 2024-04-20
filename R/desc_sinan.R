@@ -15,9 +15,10 @@ library(tidyr)
 library(DT)
 library(haven)
 library(writexl)
+
 load('dados/base_linkada_anon_female_2019_2021_14sep2023_final.Rdata')
 
-df_2_ <- df_linkada_fem_2019_2021_2 |>
+df_sinan <- df_linkada_fem_2019_2021_2 |>
   dplyr::filter(sg_sexo == "F") |>
   dplyr::mutate(
     rede_enc_sau = case_when((rede_sau=="1" | enc_saude=="1")~1,
@@ -38,35 +39,33 @@ df_2_ <- df_linkada_fem_2019_2021_2 |>
                                 T~0),
     infan_enc_juv = case_when((infan_juv=="1"|enc_vara=="1")~1),
     
-    ds_tp_ocor = case_when(
-      ds_tp_ocor == "AMEAÃ‡A" ~ "Ameaça",
-      ds_tp_ocor == "LESÃƒO CORPORAL" ~ "Lesão corporal",
-      ds_tp_ocor == "DIFAMAÃ‡ÃƒO" ~ "Difamação",
-      ds_tp_ocor == "CALÃšNIA" ~ "Calúnia",
-      ds_tp_ocor == "ESTUPRO VULNERÃ<81>VEL" ~ "Estupro de vulnerável",
-      ds_tp_ocor == "DESCUMPRIMENTO MEDIDAS PROTETIVA URGÃŠNCIA" ~ "Descumprimento de medidas protetivas de urgência",
-      ds_tp_ocor == "VIAS FATO" ~ "Vias Fato",
-      ds_tp_ocor == "ESTUPRO" ~ "Estupro",
-      ds_tp_ocor == "EXTORSÃƒO" ~ "Extorsão",
-      TRUE ~ ds_tp_ocor  # Mantém os valores originais que não correspondem a nenhum dos anteriores
+    faixa_etaria_padrao = ifelse(is.na(faixa_etaria_padrao), "IGNORADA", faixa_etaria_padrao),
+    
+    ds_autor_sexo = case_when(
+      autor_sexo == "1" ~ "Masculino",
+      autor_sexo == "2" ~ "Feminino",
+      autor_sexo == "3" ~ "Ambos os sexos",
+      TRUE ~ "IGNORADO"
     ),
-    
-    dt_comum = coalesce(dt_obito, dt_notific, dt_internacao),
-    
-    faixa_etaria_padrao = ifelse(is.na(faixa_etaria_padrao), "IGNORADA", faixa_etaria_padrao)
+    autor_alco = case_when(
+      autor_alco == "1" ~ "Sim",
+      autor_alco == "2" ~ "Não",
+      TRUE ~ "IGNORADO"
+    )
+  ) |> 
+  filter(
+    banco == "SINAN"
   )
 rm(df_linkada_fem_2019_2021_2)
 
 
 
 
-# Shape do município
-muni_rn <- st_read("mapas/RN_Municipios_2022/RN_Municipios_2022.shp", crs = 4326)
-
-
-home_ui <- function(id) {
+sinan_ui <- function(id) {
   ns <- NS(id)
+  
   tagList(
+    
     fluidRow(box
              (width = 12,
                title = "Filtros",
@@ -79,91 +78,50 @@ home_ui <- function(id) {
                  #                      max = 2021,
                  #                      value = c(2019,2021)))
                  # ),
-                 column(4,
-                        wellPanel(
-                          selectInput(inputId = ns("filtro_raca"),
-                                      label = "Raça/cor",
-                                      multiple = TRUE,
-                                      choices = unique(df_2_$ds_raca),
-                                      selected = unique(df_2_$ds_raca))
-                        )),
-                 column(4,
-                        wellPanel(
-                          selectInput(inputId = ns("filtro_banco"),
-                                      label = "Banco de dados",
-                                      multiple = TRUE,
-                                      choices = unique(df_2_$banco),
-                                      selected = unique(df_2_$banco))
-                        )),
-                 column(4,
+                 column(6,
                         wellPanel(
                           selectInput(inputId = ns("filtro_idade"),
                                       label = "Faixa Etária",
                                       multiple = TRUE,
-                                      choices = unique(df_2_$faixa_etaria_padrao),
-                                      selected = unique(df_2_$faixa_etaria_padrao))
+                                      choices = c("0 a 9 anos", "10 a 19 anos",
+                                                  "20 a 29 anos", "30 a 59 anos",
+                                                  "60+", "IGNORADA"),
+                                      selected = c("0 a 9 anos", "10 a 19 anos",
+                                                   "20 a 29 anos", "30 a 59 anos",
+                                                   "60+", "IGNORADA"))
+                        )),
+                 column(6,
+                        wellPanel(
+                          selectInput(inputId = ns("filtro_raca"),
+                                      label = "Raça/cor",
+                                      multiple = TRUE,
+                                      choices = unique(df_sinan$ds_raca),
+                                      selected = unique(df_sinan$ds_raca))
                         ))
+                 
                )
              )),
+    fluidRow(
+      
+      box(title = 'Faixa etária',
+          width = 6,
+          status = "secondary",
+          maximizable = TRUE,
+          closable = FALSE,
+          solidHeader = TRUE,
+          plotlyOutput(ns("faixa_etaria_graf")),
+          downloadButton(outputId = ns("download_tab_faixa_etaria"), label = "Download da Tabela")),
+      
+      box(title = 'Raça/cor',
+          width = 6,
+          status = "secondary",
+          maximizable = TRUE,
+          closable = FALSE,
+          solidHeader = TRUE,
+          plotlyOutput(ns("raca_cor_graf")),
+          downloadButton(outputId = ns("download_tab_raca_cor"), label = "Download da Tabela"))
+    ),
     
-    fluidRow(
-      bs4Dash::valueBoxOutput(ns("num_registros")),
-      bs4Dash::infoBoxOutput(ns("num_mulheres")),
-      bs4Dash::infoBoxOutput(ns("reg_pareado"))
-    ),
-    fluidRow(
-      box(
-        title = 'Faixa etária',
-        width = 6,
-        status = "secondary",
-        maximizable = TRUE,
-        closable = FALSE,
-        solidHeader = TRUE,
-        plotlyOutput(ns("faixa_etaria_graf")),
-        downloadButton(outputId = ns("download_tab_faixa_etaria"), label = "Download da Tabela")
-        
-      ),
-      box(
-        title = 'Raça/cor',
-        width = 6,
-        status = "secondary",
-        maximizable = TRUE,
-        closable = FALSE,
-        solidHeader = TRUE,
-        plotlyOutput(ns("raca_cor_graf")),
-        downloadButton(outputId = ns("download_tab_raca_cor"), label = "Download da Tabela")
-        
-      )
-    ),
-    fluidRow(
-      box(
-        h4("Texto sobre o gráfico- Título"),
-        p("textos, textos, textos
-          A linha de vida é um equipamento fundamental para equipes que executam serviços em altura,
-          que podem resultar em queda com fraturas graves ou óbito `r df_2_ |> nrow()`. A linha de vida assegura que o funcionário 
-          esteja seguro enquanto executa sua atividade laboral."),
-        p("A linha de vida é um equipamento fundamental para equipes que
-          executam serviços em altura, que podem resultar em queda com fraturas graves ou óbito.
-          A linha de vida assegura que o funcionário esteja seguro enquanto executa sua atividade laboral."),
-        title = "Linha da vida",
-        width = 12,
-        status = "secondary",
-        maximizable = TRUE,
-        closable = FALSE,
-        solidHeader = TRUE,
-        plotlyOutput(ns("linha_vida_geral"))
-      )
-    ),
-    fluidRow(
-      box(
-        title = "Distribuição no Estado",
-        width = 12,
-        status = "secondary",
-        maximizable = TRUE,
-        closable = FALSE,
-        solidHeader = TRUE,
-        leafletOutput(ns("mapa_estado"))
-      )),
     fluidRow(
       box(
         title = "Informações do SINAN",
@@ -218,87 +176,69 @@ home_ui <- function(id) {
           )
         )
       )
-    ))
-  
+    ),
+    
+    fluidRow(
+      
+      box(title = 'Sexo do agressor',
+          width = 6,
+          status = "secondary",
+          maximizable = TRUE,
+          closable = FALSE,
+          solidHeader = TRUE,
+          plotlyOutput(ns("sexo_agressor_graf")),
+          downloadButton(outputId = ns("download_tb_sexo_agressor_graf"), label = "Download da Tabela")),
+      
+      box(title = 'Suspeita do uso de álcool',
+          width = 6,
+          status = "secondary",
+          maximizable = TRUE,
+          closable = FALSE,
+          solidHeader = TRUE,
+          plotlyOutput(ns("uso_alc_graf")),
+          downloadButton(outputId = ns("download_tab_uso_alc_graf"), label = "Download da Tabela"))
+    ),
+    
+    fluidRow(
+      box(
+        width = 12,
+        title = "Distribuição da taxa de notificação por município",
+        status = "secondary",
+        maximizable = TRUE,
+        closable = FALSE,
+        solidHeader = TRUE,
+        leafletOutput(ns("mapa_sinan")),
+        sliderInput(ns("ano_filtro"),
+                    "Escolha um ano:",
+                    min = 2010,
+                    max = 2022,
+                    value = 2022,  # Valor inicial do slider
+                    step = 1,  # Incremento por etapa
+                    ticks = TRUE,  # Mostra os valores abaixo do slider
+                    sep = "",  # Não usar separador de milhares
+                    animate = TRUE # Animação ao mover o slider
+        )
+      )
+    )
+    
+  )
 }
 
-home_server <- function(id) {
+sinan_server <- function(id) {
   moduleServer(
     id,
     function(input, output, session) {
-      
-      
-      # Output Número de registros ----
-      output$num_registros <- renderValueBox({
-        valueBox(
-          df_2_ |> 
-            filter(
-              # ano>=min(input$filtro_ano),
-              # ano<=max(input$filtro_ano),
-              faixa_etaria_padrao %in% input$filtro_idade,
-              ds_raca %in% input$filtro_raca,
-              banco %in% input$filtro_banco
-            ) |> 
-            nrow(),
-          "Registros nas bases",
-          # fill = TRUE,
-          # gradient = TRUE,
-          color = "danger",
-          icon = icon("address-card"),
-        )
-      })
-      
-      # Output para o número de mulheres ----
-      output$num_mulheres <- renderValueBox({
-        valueBox(
-          df_2_ |> 
-            filter(
-              # ano>=min(input$filtro_ano),
-              # ano<=max(input$filtro_ano),
-              faixa_etaria_padrao %in% input$filtro_idade,
-              ds_raca %in% input$filtro_raca,
-              banco %in% input$filtro_banco) |> 
-            distinct(par_f) |>
-            nrow(),
-          icon = icon("venus"),
-          "Mulheres nas bases",
-          
-          color = "danger"
-          
-        )
-      })
-      
-      # Output para o número de registros pareados ----
-      output$reg_pareado <- renderValueBox({
-        valueBox(
-          df_2_ |> 
-            dplyr::filter(
-              !is.na(par_1)
-            ) |>
-            nrow(),
-          "Registros pareados",
-          color = "danger",
-          icon = icon("code-compare")
-        )
-      })
-      
-      
-      
-      
       # Faixa etaria grafico ----
       output$faixa_etaria_graf <- renderPlotly({
         
-        a <-  df_2_ |>
+        a <-  df_sinan |>
           filter(
-            # ano >= min(input$filtro_ano),
-            # ano <= max(input$filtro_ano),
             faixa_etaria_padrao %in% input$filtro_idade,
-            ds_raca %in% input$filtro_raca,
-            banco %in% input$filtro_banco) |> 
-          distinct(par_f, ds_raca, sg_sexo, faixa_etaria_padrao) |>
+            ds_raca %in% input$filtro_raca) |> 
+          #distinct(par_f, ds_raca, sg_sexo, faixa_etaria_padrao) |>
           tab_1(faixa_etaria_padrao) |>
           filter(faixa_etaria_padrao != "Total") |> 
-          mutate(cor = ifelse(faixa_etaria_padrao == "IGNORADA", "gray", "#121e87")) |>
+          mutate(cor = ifelse(faixa_etaria_padrao == "IGNORADA", "#9ba2cb", "#121e87")) |>
           ggplot(aes(
             x = faixa_etaria_padrao, y = `%`, fill = cor, 
             text = paste("Faixa etária:", faixa_etaria_padrao, "\nFrequência: ", `%`,"%", "\nRegistros: ", n)
@@ -327,14 +267,12 @@ home_server <- function(id) {
         content = function(file) {
           # Recriar a lógica de filtragem para obter os dados exatos mostrados em output$faixa_etaria_graf
           
-          tabela_fxetaria <-  df_2_ |>
+          tabela_fxetaria <-  df_sinan |>
             filter(
-              # ano >= min(input$filtro_ano),
-              # ano <= max(input$filtro_ano),
               faixa_etaria_padrao %in% input$filtro_idade,
-              ds_raca %in% input$filtro_raca,
-              banco %in% input$filtro_banco) |>
-            distinct(par_f, ds_raca, sg_sexo, faixa_etaria_padrao) |>
+              ds_raca %in% input$filtro_raca
+            ) |>
+            #distinct(par_f, ds_raca, sg_sexo, faixa_etaria_padrao) |>
             tab_1(faixa_etaria_padrao) |>
             arrange(faixa_etaria_padrao)
           
@@ -349,13 +287,10 @@ home_server <- function(id) {
       # Raça/cor ----
       output$raca_cor_graf <- renderPlotly({
         # Prepare os dados
-        dados_preparados <- df_2_ |>
+        dados_preparados <- df_sinan |>
           filter(
-            # ano >= min(input$filtro_ano),
-            # ano <= max(input$filtro_ano),
             faixa_etaria_padrao %in% input$filtro_idade,
             ds_raca %in% input$filtro_raca,
-            banco %in% input$filtro_banco
           ) |>
           tab_1(ds_raca) |>
           filter(ds_raca != "Total")
@@ -372,7 +307,7 @@ home_server <- function(id) {
         
         # Cria um vetor de cores
         cores <- setNames(rep("#121e87", length(racas_ordenadas)), racas_ordenadas)
-        cores["IGNORADA"] <- "gray" # Define explicitamente a cor para IGNORADO
+        cores["IGNORADA"] <- "#9ba2cb" # Define explicitamente a cor para IGNORADO
         
         # Cria o gráfico
         b <- ggplot(dados_preparados, aes(
@@ -408,13 +343,10 @@ home_server <- function(id) {
         content = function(file) {
           # Recriar a lógica de filtragem para obter os dados exatos mostrados em output$download_tab_raca_cor
           
-          tabela_raca <-  df_2_ |>
+          tabela_raca <-  df_sinan |>
             filter(
-              # ano >= min(input$filtro_ano),
-              # ano <= max(input$filtro_ano),
               faixa_etaria_padrao %in% input$filtro_idade,
               ds_raca %in% input$filtro_raca,
-              banco %in% input$filtro_banco
             ) |>
             tab_1(ds_raca) 
           
@@ -423,72 +355,6 @@ home_server <- function(id) {
           
         })
       
-      
-      # Linha da vida gráfico ----
-      output$linha_vida_geral <- renderPlotly({
-        
-        req(input$filtro_banco) # Certifica que o filtro_banco está disponível
-        
-        aux <- df_2_ |>
-          filter(!is.na(par_1) & FL_SINAN == 1, banco %in% input$filtro_banco,
-                 ds_raca %in% input$filtro_raca,
-                 faixa_etaria_padrao %in% input$filtro_idade) |>
-          distinct(par_1) |>
-          mutate(par_reduzido_1 = 1:n()*20, par_reduzido_2 = 1:n())
-        
-        # Esta etapa assume que df_2_ já contém as colunas necessárias ou é ajustado adequadamente
-        df_aux <- left_join(df_2_, aux, by = "par_1")
-        
-        ca <- df_aux |>
-          filter(!is.na(par_1), FL_SINAN == 1) |>
-          group_by(par_1) |>
-          mutate(repete = n()) |>
-          ungroup() |>
-          filter(repete > 1) |>
-          ggplot(aes(x = dt_comum, y = par_reduzido_1)) +
-          geom_line(aes(group = par_reduzido_1), color = 'lightgray', size = 0.15) +
-          geom_point(aes(color = banco), size = 0.5) +
-          labs(x = "Data do evento", y = "") +
-          theme_minimal() +
-          theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(), axis.title.y = element_blank())
-        # adicionar o N de vezes que a pessoa aparece
-        ggplotly(ca)
-      })
-      
-      
-      
-      output$mapa_estado <- renderLeaflet({
-        leaflet() |>
-          addProviderTiles(providers$CartoDB.Positron, options = providerTileOptions(noWrap = TRUE)) |>
-          setView(lng = -36.239436, lat =  -5.699705, zoom = 8)
-      })
-      
-      # Adicionar polígonos ao mapa ----
-      observe({
-        leafletProxy("mapa_estado", data = muni_rn) |>
-          clearShapes() |>
-          addPolygons(weight = 1, color = "#666666",
-                      fillOpacity = 0.5, opacity = 1,
-                      label = ~NM_MUN,
-                      labelOptions = labelOptions(direction = 'auto', noHide = FALSE, textOnly = TRUE),
-                      layerId = ~NM_MUN) # Usar o nome do município como ID único para cada polígono
-      })
-      
-      # Detectar clique e destacar polígono ----
-      observeEvent(input$mapa_estado_shape_click, {
-        click_info <- input$mapa_estado_shape_click
-        leafletProxy("mapa_estado") |>
-          clearShapes() |>
-          addPolygons(data = muni_rn, 
-                      weight = 2, color = "lightgray", fillColor = "gray",
-                      fillOpacity = 0.7, layerId = ~NM_MUN,
-                      options = pathOptions(dashArray = "5, 5")) |>
-          addPolygons(data = subset(muni_rn, NM_MUN == click_info$id),
-                      weight = 3, color = "#666666", fillColor = "#666666",
-                      fillOpacity = 0.7, layerId = click_info$id)
-      })
-      
-      
       # SINAN ----
       output$sinan <- renderDataTable({
         
@@ -496,7 +362,7 @@ home_server <- function(id) {
         
         
         filtered_df <- get(input$evolution_filter)
-        tabela_sinan <- df_2_ |> 
+        tabela_sinan <- df_sinan |> 
           vitaltable::tab_cat_sinan(filtered_df, input$extrato_sinan_filter, input$valor_sinan_filter) |> as.data.frame() 
         
         # Checagem do filtro e aplicação das mudanças correspondentes
@@ -533,7 +399,7 @@ home_server <- function(id) {
           rel <- vitaltable::rel
           
           filtered_df <- get(input$evolution_filter)
-          tabela_sinan <- df_2_ |> 
+          tabela_sinan <- df_sinan |> 
             vitaltable::tab_cat_sinan(filtered_df, input$extrato_sinan_filter, input$valor_sinan_filter) |> as.data.frame()
           
           # Aplicar as mesmas condições de filtragem que você tem em output$sinan
@@ -560,5 +426,162 @@ home_server <- function(id) {
         }
       )
       
-    })
+      
+      # Gráfico sexo do agressor ---- 
+      output$sexo_agressor_graf<- renderPlotly({
+        
+        df_to_graf <- df_sinan |>
+          filter(
+            faixa_etaria_padrao %in% input$filtro_idade,
+            ds_raca %in% input$filtro_raca
+          ) |> 
+          vitaltable::tab_1(ds_autor_sexo) |> 
+          filter(ds_autor_sexo != "Total")
+        
+        ordered_levels <- tab_1(df_sinan, ds_autor_sexo) |> filter(ds_autor_sexo != "Total") |> 
+          arrange(desc(ds_autor_sexo == "IGNORADO"), `%`) %>% 
+          pull(ds_autor_sexo)
+        
+        df_to_graf$ds_autor_sexo <- factor(df_to_graf$ds_autor_sexo, levels = ordered_levels)
+        
+        # Garantindo que temos uma coluna 'n' e ajustando o texto dos tooltips
+          df_to_graf <- df_to_graf %>%
+          mutate(text = paste("Faixa etária:", ds_autor_sexo, "\nFrequência: ", round(`%`, 1), "%", "\nRegistros: ", n))
+        
+        p <- ggplot(data = df_to_graf, aes(x = factor(1), y = `%`, fill = ds_autor_sexo, text = text)) +
+          geom_bar(stat = "identity", position = "stack") +
+          scale_fill_manual(values = c("Masculino" = "#ff5054", 
+                                       "Feminino" = "#14147f",
+                                       "IGNORADO" = "#9ba2cb", 
+                                       "Ambos os sexos" = "#f8d023")) +
+          geom_text(aes(label = sprintf("%1.1f%%", `%`)), position = position_stack(vjust = 0.5), colour ="white", size=3) +
+          labs(x = "", y = "Proporção entre as categorias", fill = "Sexo do Autor") +
+          theme_minimal() +
+          theme(
+            axis.title.x = element_blank(),  # Remove título do eixo X
+            axis.text.x = element_blank(),   # Remove texto do eixo X
+            axis.ticks.x = element_blank(),  # Remove marcas de tick do eixo X
+            legend.position = "bottom"       # Move a legenda para baixo
+          ) +
+          ggtitle("")
+        
+        # Convertendo o ggplot para plotly e ajustando os tooltips
+        ggplotly(p, tooltip = "text") |> layout(
+          hoverlabel = list(
+            bgcolor = "white", # Cor de fundo do tooltip
+            font = list(color = "black") # Cor do texto
+          )
+        )
+        
+      })
+      
+      
+      
+      
+      # Gráfico de suspeita do uso de álcool ----
+      output$uso_alc_graf<- renderPlotly({
+        
+        df_to_graf <- df_sinan |>
+          filter(
+            faixa_etaria_padrao %in% input$filtro_idade,
+            ds_raca %in% input$filtro_raca
+          ) |> 
+          vitaltable::tab_1(autor_alco) |> 
+          filter(autor_alco != "Total")
+        
+        ordered_levels <- tab_1(df_sinan, autor_alco) |> filter(autor_alco != "Total") |> 
+          arrange(desc(autor_alco == "IGNORADO"), `%`) %>% 
+          pull(autor_alco)
+        
+        df_to_graf$autor_alco <- factor(df_to_graf$autor_alco, levels = ordered_levels)
+        
+        # Garantindo que temos uma coluna 'n' e ajustando o texto dos tooltips
+        df_to_graf <- df_to_graf %>%
+          mutate(text = paste("Faixa etária:", autor_alco, "\nFrequência: ", round(`%`, 1), "%", "\nRegistros: ", n))
+        
+        p <- ggplot(data = df_to_graf, aes(x = factor(1), y = `%`, fill = autor_alco, text = text)) +
+          geom_bar(stat = "identity", position = "stack") +
+          scale_fill_manual(
+            values = c(
+              "Não" = "#14147f",
+              "IGNORADO" = "#9ba2cb", 
+              "Sim" = "#ff5054"
+            )
+          ) +
+          geom_text(aes(
+            label = sprintf("%1.1f%%", `%`)), 
+            position = position_stack(vjust = 0.5),
+            colour ="white",
+            size=3
+          ) +
+          labs(x = "", y = "Proporção entre as categorias", fill = "Sexo do Autor") +
+          theme_minimal() +
+          theme(
+            axis.title.x = element_blank(),  # Remove título do eixo X
+            axis.text.x = element_blank(),   # Remove texto do eixo X
+            axis.ticks.x = element_blank(),  # Remove marcas de tick do eixo X
+            legend.position = "bottom"       # Move a legenda para baixo
+          ) +
+          ggtitle("")
+        
+        # Convertendo o ggplot para plotly e ajustando os tooltips
+        ggplotly(p, tooltip = "text") |> layout(
+          hoverlabel = list(
+            bgcolor = "white", # Cor de fundo do tooltip
+            font = list(color = "black") # Cor do texto
+          )
+        )
+        
+      })
+      
+      
+      output$mapa_sinan <- renderLeaflet({
+        # Ler o arquivo shapefile
+        muni_rn <- st_read("mapas/RN_Municipios_2022/RN_Municipios_2022.shp")
+        
+        # Transformar as coordenadas para o sistema de referência WGS 84 (CRS 4326)
+        muni_rn <- st_transform(muni_rn, crs = 4326)
+        muni_rn$ID_MN_RESI <- substr(muni_rn$CD_MUN, 1, nchar(muni_rn$CD_MUN) - 1)
+        
+        # Taxa
+        taxa <- read.csv('dados/prev_mun_br_2010_2022.csv')
+        taxa <- taxa |> filter(ANO_NOT==input$ano_filtro)
+        
+        # Novo df
+        para_mapa <- muni_rn |> mutate(ID_MN_RESI = as.integer(ID_MN_RESI)) |> left_join(taxa, by="ID_MN_RESI")
+        
+        
+        # Cores personalizadas
+        cores <- c( "#14147f","#f8d023","#f55858")
+        
+        # Crie sua própria função de cores com base nas suas preferências
+        pal <- colorNumeric(palette = cores, domain = range(na.omit(para_mapa$tx_not_pop_fem_100k), na.rm = TRUE))
+        
+        m <- leaflet(data = para_mapa) |>
+          addProviderTiles(providers$CartoDB.Positron) |>
+          addPolygons(
+            fillColor = ~pal(tx_not_pop_fem_100k),
+            fillOpacity = 0.8, 
+            color = "#BDBDC3", 
+            weight = 1,
+            label = ~paste(NM_MUN),
+            popup = ~paste("Município: ", NM_MUN, "<br>",
+                           "Taxa de notificação por 100k: ", round(tx_not_pop_fem_100k, 2), "<br>",
+                           "População: ", POP, "<br>",
+                           "Notificações: ", notificacoes),
+            labelOptions = labelOptions(style = list("font-weight" = "normal"), 
+                                        direction = 'auto')
+          ) |>
+          addLegend(pal = pal, 
+                    values = ~tx_not_pop_fem_100k, 
+                    title = "Taxa de Notificação",
+                    opacity = 1)
+        m
+        
+      })
+      
+    }
+    
+    
+  )
 }
